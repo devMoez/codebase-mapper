@@ -1,54 +1,35 @@
 # 🗺️ Codebase Mapper
 
-**Stop wasting AI tokens on "exploration" turns.**
+**Codebase Mapper** generates high-signal navigation for AI agents.
 
-Codebase Mapper is a lightweight, zero-dependency tool that generates a high-signal navigation map for AI coding agents (Claude, GPT, Gemini). It scans your repository, categorizes logic, builds a visual tree, and provides a "Source of Truth" that tells agents exactly where to go.
+## 🚀 Quick Start
 
-## 🚀 Why use this?
-
-Most AI agents waste 3-5 turns just "looking around" your folders. This costs you money (tokens) and time.
-Codebase Mapper fixes this by providing:
-- **Graphified Tree:** A full visual representation of your repo.
-- **Categorized Logic:** Automatically identifies API routes, UI components, AI logic, and more.
-- **AI Instructions:** A ready-to-paste snippet that forces the agent to use the map instead of searching.
-
-## 🛠️ Installation & Usage
-
-### 1. Run it directly (Recommended)
-You can run it in any project root using [Bun](https://bun.sh):
-
+### 1. Installation
 ```bash
-bun x codebase-mapper
+# Clone the repo
+git clone https://github.com/devMoez/codebase-mapper
+cd codebase-mapper
+# Install dependencies
+bun install
 ```
 
-*Or if you have the repo locally:*
+### 2. Run the GUI (Recommended)
+This launches a local dashboard where you can interactively map, summarize, and bundle your code.
+
+```bash
+bun --gui
+```
+
+### 3. CLI Mode
+Generate static files in `.ai/map/`:
 ```bash
 bun src/index.ts
 ```
 
-### 2. What happens next?
-The tool creates a `.ai/map/` directory in your project root with 4 files:
-1. `STRUCTURE.md`: The full architectural map.
-2. `TECH_STACK.md`: Standards and frameworks.
-3. `ENTRY_POINTS.md`: Where the logic starts.
-4. `AI_INSTRUCTIONS.md`: **The most important file.**
-
-### 3. Give it to your AI Agent
-Copy the content of `.ai/map/AI_INSTRUCTIONS.md` and paste it into:
-- Claude's Custom Instructions
-- ChatGPT's Memory / Custom Instructions
-- Cursor's `.cursorrules`
-- Gemini CLI's memory files
-
-## 📂 Project Structure
-- `src/scanner.ts`: The brains. Crawls and categorizes files.
-- `src/generator.ts`: The architect. Builds the markdown maps and tree.
-- `src/index.ts`: The entry point.
-
-## 🛡️ Privacy & Safety
-- **Zero dependencies:** No supply chain risks.
-- **Local only:** Your code never leaves your machine.
-- **Smart ignore:** Automatically ignores `.git`, `node_modules`, `venv`, and other junk.
+## 📦 How to Bundle for AI
+1. Run `bun --gui`.
+2. Select files from the sidebar.
+3. Click **"Copy Bundle for AI"** to get a clean, ready-to-paste context block.
 
 ---
-Built with ❤️ for AI-native developers.
+*Built with ❤️ for AI-native developers.*
