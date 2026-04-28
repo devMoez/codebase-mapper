@@ -1,0 +1,21 @@
+{
+  "name": "codebase-mapper",
+  "version": "1.0.0",
+  "description": "Generate a high-signal navigation map for AI coding agents. Stop wasting tokens on exploration.",
+  "type": "module",
+  "bin": {
+    "codebase-map": "src/index.ts"
+  },
+  "scripts": {
+    "map": "bun src/index.ts"
+  },
+  "keywords": [
+    "ai",
+    "token-saver",
+    "codebase-map",
+    "llm-context",
+    "navigation"
+  ],
+  "author": "Moez",
+  "license": "MIT"
+}
