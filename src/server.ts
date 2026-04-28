@@ -109,11 +109,52 @@ export async function startServer(port = 3000) {
         </aside>
     </main>
 
-    <script>
-        let scanData = null;
-        let selectedForPacker = new Set();
-        let currentPath = null;
-        let graphInstance = null;
+        async function copyFullMap() {
+            const status = document.getElementById('status');
+            const oldText = status.innerHTML;
+            status.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Copying...';
+            
+            try {
+                const res = await fetch('/api/scan');
+                const data = await res.json();
+                
+                let mapText = "CODEBASE MAP\\n" + "=".repeat(20) + "\\n\\n";
+                mapText += "TECH STACK: " + data.techStack.join(', ') + "\\n\\n";
+                mapText += "ENTRY POINTS:\\n" + data.entryPoints.map(e => "- " + e).join('\\n') + "\\n\\n";
+                mapText += "STRUCTURE:\\n";
+                
+                // Simple tree representation for clipboard
+                const root = {};
+                data.structure.forEach(path => {
+                    let current = root;
+                    path.split(/[\\\\/]/).forEach(part => {
+                        if (!current[part]) current[part] = {};
+                        current = current[part];
+                    });
+                });
+
+                function buildTextTree(obj, indent = "") {
+                    let text = "";
+                    const keys = Object.keys(obj).sort();
+                    keys.forEach((key, index) => {
+                        const isLast = index === keys.length - 1;
+                        text += indent + (isLast ? "└── " : "├── ") + key + "\\n";
+                        text += buildTextTree(obj[key], indent + (isLast ? "    " : "│   "));
+                    });
+                    return text;
+                }
+                
+                mapText += buildTextTree(root);
+                
+                await navigator.clipboard.writeText(mapText);
+                status.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> Copied Full Map!';
+                setTimeout(() => { status.innerHTML = oldText; }, 2000);
+            } catch (e) {
+                console.error(e);
+                status.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> Failed to Copy';
+                setTimeout(() => { status.innerHTML = oldText; }, 2000);
+            }
+        }
 
         async function loadScan() {
             try {
