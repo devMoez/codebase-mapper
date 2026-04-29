@@ -1,35 +1,34 @@
-# 🗺️ Codebase Mapper
+# 🌌 Codebase Mapper 3D
 
-**Codebase Mapper** generates high-signal navigation for AI agents.
+Generate an interactive, high-performance 3D force-directed graph of your codebase. Stop wasting tokens on exploration and visualize your architecture in real-time.
 
-## 🚀 Quick Start
+## 🚀 Features
 
-### 1. Installation
+1.  **3D Force-Directed Graph**: Interactive visualization of files, folders, and dependencies.
+2.  **Command Palette (⌘K / Ctrl+K)**: Universal search to jump to any node instantly.
+3.  **Impact View**: Trace transitive dependencies to see the blast radius of changes.
+4.  **Real-Time Live Updates**: Powered by `chokidar` and WebSockets; watch the graph evolve as you code.
+5.  **Path Finding**: Select two nodes to find the shortest dependency path between them.
+6.  **Smart Filtering**: Toggle between structural containment and import/export views.
+
+## 🛠️ Usage
+
 ```bash
-# Clone the repo
-git clone https://github.com/devMoez/codebase-mapper
-cd codebase-mapper
 # Install dependencies
 bun install
+
+# Run the 3D visualizer
+bun src/index.ts --3d [path/to/project]
 ```
 
-### 2. Run the GUI (Recommended)
-This launches a local dashboard where you can interactively map, summarize, and bundle your code.
+The visualizer will open automatically at `http://localhost:3000`.
 
-```bash
-bun --gui
-```
+## 📦 Tech Stack
 
-### 3. CLI Mode
-Generate static files in `.ai/map/`:
-```bash
-bun src/index.ts
-```
+- **Backend**: Bun, Express, `ts-morph` (for AST parsing), `chokidar`.
+- **Frontend**: `3d-force-graph` (Three.js), Tailwind CSS.
 
-## 📦 How to Bundle for AI
-1. Run `bun --gui`.
-2. Select files from the sidebar.
-3. Click **"Copy Bundle for AI"** to get a clean, ready-to-paste context block.
+## 🛡️ Requirements
 
----
-*Built with ❤️ for AI-native developers.*
+- [Bun](https://bun.sh/) installed.
+- TypeScript codebase for best results (supports Python/Go/Rust with basic file-level links).
