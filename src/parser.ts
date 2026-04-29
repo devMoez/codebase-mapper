@@ -1,7 +1,8 @@
-import { Project, SourceFile } from 'ts-morph';
+import { Project } from 'ts-morph';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { glob } from 'glob';
+import Database from 'better-sqlite3';
 
 export interface GraphNode {
   id: string;
@@ -22,16 +23,43 @@ export interface CodeGraph {
   links: GraphLink[];
 }
 
-export async function parseCodebase(rootDir: string): Promise<CodeGraph> {
-  const project = new Project();
+let db: Database.Database | null = null;
+
+function initDb(rootDir: string) {
+    const dbPath = path.join(rootDir, 'graph.sqlite');
+    db = new Database(dbPath);
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS nodes (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            type TEXT,
+            extension TEXT,
+            path TEXT
+        );
+        CREATE TABLE IF NOT EXISTS links (
+            source TEXT,
+            target TEXT,
+            type TEXT,
+            UNIQUE(source, target, type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_links_source ON links(source);
+        CREATE INDEX IF NOT EXISTS idx_links_target ON links(target);
+    `);
+}
+
+export async function parseCodebase(rootDir: string, onProgress?: (current: number, total: number) => void): Promise<CodeGraph> {
+  if (!db) initDb(rootDir);
   
-  // Find all files excluding node_modules, dist, etc.
+  db!.prepare('DELETE FROM nodes').run();
+  db!.prepare('DELETE FROM links').run();
+
   const ignorePatterns = [
     '**/node_modules/**',
     '**/dist/**',
     '**/build/**',
     '**/.git/**',
     '**/coverage/**',
+    '**/*.sqlite*',
   ];
 
   const files = await glob('**/*.{ts,tsx,js,jsx,py,go,rs}', {
@@ -40,93 +68,86 @@ export async function parseCodebase(rootDir: string): Promise<CodeGraph> {
     absolute: true,
   });
 
-  const nodes: GraphNode[] = [];
-  const links: GraphLink[] = [];
+  const totalFiles = files.length;
   const processedDirs = new Set<string>();
 
-  // Add files to ts-morph project
+  const insertNode = db!.prepare('INSERT OR REPLACE INTO nodes (id, name, type, extension, path) VALUES (?, ?, ?, ?, ?)');
+  const insertLink = db!.prepare('INSERT OR IGNORE INTO links (source, target, type) VALUES (?, ?, ?)');
+
+  const runTransaction = db!.transaction((files: string[]) => {
+    for (let i = 0; i < files.length; i++) {
+        const filePath = files[i];
+        const relativePath = path.relative(rootDir, filePath);
+        const ext = path.extname(filePath);
+        
+        insertNode.run(relativePath, path.basename(filePath), 'file', ext, relativePath);
+
+        let currentPath = path.dirname(relativePath);
+        let childPath = relativePath;
+
+        while (currentPath !== '.') {
+            if (!processedDirs.has(currentPath)) {
+                insertNode.run(currentPath, path.basename(currentPath), 'folder', null, currentPath);
+                processedDirs.add(currentPath);
+            }
+            insertLink.run(currentPath, childPath, 'containment');
+            childPath = currentPath;
+            currentPath = path.dirname(currentPath);
+        }
+        
+        if (childPath !== relativePath || !relativePath.includes(path.sep)) {
+            insertLink.run('root', childPath, 'containment');
+        }
+
+        if (onProgress && i % 50 === 0) onProgress(i, totalFiles);
+    }
+  });
+
+  runTransaction(files);
+  insertNode.run('root', path.basename(rootDir) || 'root', 'folder', null, '.');
+
   const tsFiles = files.filter(f => /\.(ts|tsx|js|jsx)$/.test(f));
-  project.addSourceFilesAtPaths(tsFiles);
-
-  for (const filePath of files) {
-    const relativePath = path.relative(rootDir, filePath);
-    const ext = path.extname(filePath);
-    
-    // Add file node
-    nodes.push({
-      id: relativePath,
-      name: path.basename(filePath),
-      type: 'file',
-      extension: ext,
-      path: relativePath,
-    });
-
-    // Add directory nodes and containment links
-    let currentPath = path.dirname(relativePath);
-    let childPath = relativePath;
-
-    while (currentPath !== '.') {
-      if (!processedDirs.has(currentPath)) {
-        nodes.push({
-          id: currentPath,
-          name: path.basename(currentPath),
-          type: 'folder',
-          path: currentPath,
-        });
-        processedDirs.add(currentPath);
-      }
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < tsFiles.length; i += CHUNK_SIZE) {
+      const chunk = tsFiles.slice(i, i + CHUNK_SIZE);
+      const subProject = new Project();
+      subProject.addSourceFilesAtPaths(chunk);
       
-      links.push({
-        source: currentPath,
-        target: childPath,
-        type: 'containment',
-      });
-
-      childPath = currentPath;
-      currentPath = path.dirname(currentPath);
-    }
-    
-    // Add link from root ('.') to top-level items if needed
-    if (childPath !== relativePath || !relativePath.includes(path.sep)) {
-        links.push({
-            source: 'root',
-            target: childPath,
-            type: 'containment'
-        });
-    }
-  }
-  
-  // Add root node
-  nodes.push({ id: 'root', name: path.basename(rootDir) || 'root', type: 'folder', path: '.' });
-
-  // Analyze TS dependencies
-  for (const sourceFile of project.getSourceFiles()) {
-    const sourcePath = path.relative(rootDir, sourceFile.getFilePath());
-    
-    const imports = sourceFile.getImportDeclarations();
-    for (const imp of imports) {
-      const moduleSpecifier = imp.getModuleSpecifierValue();
-      const resolvedFile = imp.getModuleSpecifierSourceFile();
-      
-      if (resolvedFile) {
-        const targetPath = path.relative(rootDir, resolvedFile.getFilePath());
-        links.push({
-          source: sourcePath,
-          target: targetPath,
-          type: 'import',
-        });
-      }
-    }
-    
-    // Simple export analysis could be added here
+      db!.transaction(() => {
+          for (const sourceFile of subProject.getSourceFiles()) {
+              const sourcePath = path.relative(rootDir, sourceFile.getFilePath());
+              const imports = sourceFile.getImportDeclarations();
+              for (const imp of imports) {
+                  const resolvedFile = imp.getModuleSpecifierSourceFile();
+                  if (resolvedFile) {
+                      const targetPath = path.relative(rootDir, resolvedFile.getFilePath());
+                      insertLink.run(sourcePath, targetPath, 'import');
+                  }
+              }
+          }
+      })();
+      if (onProgress) onProgress(Math.min(i + CHUNK_SIZE, tsFiles.length), tsFiles.length);
   }
 
-  // Deduplicate links
-  const uniqueLinks = Array.from(new Set(links.map(l => `${l.source}|${l.target}|${l.type}`)))
-    .map(s => {
-      const [source, target, type] = s.split('|');
-      return { source, target, type: type as any };
-    });
+  return getFullGraph();
+}
 
-  return { nodes, links: uniqueLinks };
+export function getFullGraph(): CodeGraph {
+    const nodes = db!.prepare('SELECT * FROM nodes').all() as GraphNode[];
+    const links = db!.prepare('SELECT * FROM links').all() as GraphLink[];
+    return { nodes, links };
+}
+
+export function getTreeChildren(parentPath: string): GraphNode[] {
+    const query = parentPath === '.' ? 'root' : parentPath;
+    return db!.prepare(`
+        SELECT n.* FROM nodes n
+        JOIN links l ON n.id = l.target
+        WHERE l.source = ? AND l.type = 'containment'
+    `).all(query) as GraphNode[];
+}
+
+export function searchNodes(query: string, limit: number = 50): GraphNode[] {
+    return db!.prepare('SELECT * FROM nodes WHERE name LIKE ? OR path LIKE ? LIMIT ?')
+        .all(`%${query}%`, `%${query}%`, limit) as GraphNode[];
 }

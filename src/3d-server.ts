@@ -3,66 +3,84 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'node:path';
 import chokidar from 'chokidar';
-import { parseCodebase, CodeGraph } from './parser';
+import { parseCodebase, CodeGraph, getFullGraph, getTreeChildren, searchNodes } from './parser';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function start3DServer(rootDir: string, initialGraph: CodeGraph) {
+export async function start3DServer(rootDir: string, initialGraph: CodeGraph | null) {
   const app = express();
+  app.use(express.json());
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
   
+  let currentRootDir = rootDir;
   let currentGraph = initialGraph;
+  let watcher: chokidar.FSWatcher | null = null;
   const port = 3000;
 
-  // Serve static files from 'public' directory
   const publicPath = path.join(process.cwd(), 'public');
   app.use(express.static(publicPath));
 
   app.get('/api/graph', (req, res) => {
-    res.json(currentGraph);
+    res.json(currentGraph || { nodes: [], links: [] });
   });
 
-  // WebSocket connection for real-time updates
-  wss.on('connection', (ws) => {
-    console.log('Client connected to 3D visualizer');
-  });
-
-  // Watch for file changes
-  const watcher = chokidar.watch(rootDir, {
-    ignored: [
-        '**/node_modules/**', 
-        '**/dist/**', 
-        '**/.git/**',
-        '**/graph.json'
-    ],
-    persistent: true,
-    ignoreInitial: true
-  });
-
-  watcher.on('all', async (event, filePath) => {
-    console.log(`File change detected: ${event} ${filePath}`);
+  app.post('/api/load-folder', async (req, res) => {
+    const { folderPath } = req.body;
     try {
-      currentGraph = await parseCodebase(rootDir);
-      // Notify all clients
-      wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // OPEN
-          client.send(JSON.stringify({ type: 'update', graph: currentGraph }));
-        }
-      });
-    } catch (err) {
-      console.error('Error during incremental parse:', err);
+        currentRootDir = folderPath;
+        res.json({ success: true });
+        broadcast({ type: 'graph-start' });
+        currentGraph = await parseCodebase(currentRootDir, (current, total) => {
+            broadcast({ type: 'graph-progress', current, total });
+        });
+        setupWatcher(currentRootDir);
+        broadcast({ type: 'update', graph: currentGraph });
+        broadcast({ type: 'graph-done' });
+    } catch (err: any) {
+        broadcast({ type: 'error', message: err.message });
     }
   });
 
-  server.listen(port, () => {
-    console.log(`\x1b[36m🚀 3D Visualizer running at http://localhost:${port}\x1b[0m`);
-    // Try to open browser
-    const open = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-    import('node:child_process').then(({ exec }) => {
-        exec(`${open} http://localhost:${port}`);
+  app.get('/api/tree/children', (req, res) => {
+    const parentPath = req.query.path as string || '.';
+    res.json(getTreeChildren(parentPath));
+  });
+
+  app.get('/api/search', (req, res) => {
+    const q = req.query.q as string;
+    const limit = parseInt(req.query.limit as string) || 50;
+    res.json(searchNodes(q, limit));
+  });
+
+  wss.on('connection', (ws) => {
+    console.log('Client connected');
+  });
+
+  function broadcast(data: any) {
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1) client.send(JSON.stringify(data));
     });
+  }
+
+  function setupWatcher(dir: string) {
+    if (watcher) watcher.close();
+    watcher = chokidar.watch(dir, {
+        ignored: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/graph.sqlite*'],
+        persistent: true,
+        ignoreInitial: true
+    });
+    watcher.on('all', async () => {
+        currentGraph = await parseCodebase(currentRootDir);
+        broadcast({ type: 'update', graph: currentGraph });
+    });
+  }
+
+  if (currentRootDir && currentGraph) setupWatcher(currentRootDir);
+
+  server.listen(port, () => {
+    console.log(`🚀 3D Visualizer: http://localhost:${port}`);
   });
 }
