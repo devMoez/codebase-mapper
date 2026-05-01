@@ -2,7 +2,7 @@ import { Project } from 'ts-morph';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { glob } from 'glob';
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 
 export interface GraphNode {
   id: string;
@@ -23,11 +23,14 @@ export interface CodeGraph {
   links: GraphLink[];
 }
 
-let db: Database.Database | null = null;
+let db: Database | null = null;
 
 function initDb(rootDir: string) {
     const dbPath = path.join(rootDir, 'graph.sqlite');
     db = new Database(dbPath);
+    // Optimize for performance
+    db.exec('PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA synchronous = OFF;');
     db.exec(`
         CREATE TABLE IF NOT EXISTS nodes (
             id TEXT PRIMARY KEY,
@@ -50,8 +53,10 @@ function initDb(rootDir: string) {
 export async function parseCodebase(rootDir: string, onProgress?: (current: number, total: number) => void): Promise<CodeGraph> {
   if (!db) initDb(rootDir);
   
+  db!.exec('BEGIN;');
   db!.prepare('DELETE FROM nodes').run();
   db!.prepare('DELETE FROM links').run();
+  db!.exec('COMMIT;');
 
   const ignorePatterns = [
     '**/node_modules/**',
@@ -99,7 +104,7 @@ export async function parseCodebase(rootDir: string, onProgress?: (current: numb
             insertLink.run('root', childPath, 'containment');
         }
 
-        if (onProgress && i % 50 === 0) onProgress(i, totalFiles);
+        if (onProgress && i % 100 === 0) onProgress(i, totalFiles);
     }
   });
 
@@ -107,14 +112,22 @@ export async function parseCodebase(rootDir: string, onProgress?: (current: numb
   insertNode.run('root', path.basename(rootDir) || 'root', 'folder', null, '.');
 
   const tsFiles = files.filter(f => /\.(ts|tsx|js|jsx)$/.test(f));
-  const CHUNK_SIZE = 500;
+  const CHUNK_SIZE = 200;
+  const project = new Project({ useInMemoryFileSystem: true });
+
   for (let i = 0; i < tsFiles.length; i += CHUNK_SIZE) {
       const chunk = tsFiles.slice(i, i + CHUNK_SIZE);
-      const subProject = new Project();
-      subProject.addSourceFilesAtPaths(chunk);
+      // Process chunk by chunk to avoid memory issues while keeping speed
+      for (const f of chunk) {
+          try {
+              project.addSourceFileAtPath(f);
+          } catch (e) {
+              // Skip files that can't be added
+          }
+      }
       
-      db!.transaction(() => {
-          for (const sourceFile of subProject.getSourceFiles()) {
+      const importTx = db!.transaction(() => {
+          for (const sourceFile of project.getSourceFiles()) {
               const sourcePath = path.relative(rootDir, sourceFile.getFilePath());
               const imports = sourceFile.getImportDeclarations();
               for (const imp of imports) {
@@ -124,8 +137,12 @@ export async function parseCodebase(rootDir: string, onProgress?: (current: numb
                       insertLink.run(sourcePath, targetPath, 'import');
                   }
               }
+              // Remove file from project to free memory for next chunk
+              project.removeSourceFile(sourceFile);
           }
-      })();
+      });
+      importTx();
+      
       if (onProgress) onProgress(Math.min(i + CHUNK_SIZE, tsFiles.length), tsFiles.length);
   }
 

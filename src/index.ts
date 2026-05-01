@@ -4,22 +4,22 @@ import { parseCodebase } from './parser'
 
 async function main() {
   const args = process.argv.slice(2)
-  const is3D = args.includes('--3d')
+  const subcommand = args[0]
 
-  if (is3D) {
-    const customPath = args.find(a => !a.startsWith("-")); 
+  if (subcommand === '3d') {
+    // The path is the second argument (if provided)
+    const customPath = args[1];
 
-    if (customPath) {
-        const rootDir = path.resolve(process.cwd(), customPath)
-        const graph = await parseCodebase(rootDir)
-        await start3DServer(rootDir, graph)
-    } else {
-        await start3DServer('', null)
-    }
+    // If no path provided, use current working directory
+    const rootDir = customPath ? path.resolve(process.cwd(), customPath) : process.cwd();
+    
+    console.log(`🚀 Mapping codebase at: ${rootDir}`);
+    const graph = await parseCodebase(rootDir)
+    await start3DServer(rootDir, graph)
     return
   }
 
-  console.log('Usage: codebase-map --3d [path]');
+  console.log('Usage: cm 3d [path]');
 }
 
 main().catch(console.error)
