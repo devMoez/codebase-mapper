@@ -39,9 +39,9 @@ async function main() {
   
   await generateAISummary(rootDir, graph);
   
-  console.log(`\n\x1b[1m\x1b[35m✨ Codebase Map generated at .codebase-mapper/\x1b[0m`);
-  console.log('\x1b[34m👉 Tell your AI agent to read .codebase-mapper/README.md to understand this project.\x1b[0m');
-  console.log('\x1b[34m👉 To see the 3D map, run: 3d\x1b[0m');
+  console.log(`\n\x1b[1m\x1b[35m✨ Codebase Map generated at .codemap/\x1b[0m`);
+  console.log('\x1b[34m👉 Tell your AI agent to read .codemap/README.md or .codemap/summary.json to understand this project.\x1b[0m');
+  console.log('\x1b[34m👉 To see the 3D map, run: 3d 3d\x1b[0m');
 }
 
 main().catch(console.error)

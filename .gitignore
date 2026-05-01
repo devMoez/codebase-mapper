@@ -6,3 +6,6 @@ dist/
 
 # Codebase Mapper
 .codebase-mapper/
+
+# Codebase Mapper
+.codemap/
