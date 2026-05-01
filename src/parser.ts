@@ -1,6 +1,7 @@
 import { Project } from 'ts-morph';
 import path from 'node:path';
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import { glob } from 'glob';
 import { Database } from 'bun:sqlite';
 
@@ -26,7 +27,14 @@ export interface CodeGraph {
 let db: Database | null = null;
 
 function initDb(rootDir: string) {
-    const dbPath = path.join(rootDir, 'graph.sqlite');
+    const configDir = path.join(rootDir, '.codebase-mapper');
+    const dbPath = path.join(configDir, 'graph.sqlite');
+    
+    // Ensure the directory exists synchronously before opening the DB
+    if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+    }
+
     db = new Database(dbPath);
     // Optimize for performance
     db.exec('PRAGMA journal_mode = WAL;');

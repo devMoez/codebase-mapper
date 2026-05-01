@@ -3,24 +3,45 @@ import path from "node:path";
 import { start3DServer } from './3d-server'
 import { parseCodebase } from './parser'
 
+import { generateAISummary } from './summarizer'
+
 async function main() {
   const args = process.argv.slice(2)
   
-  // Handle both 'cm 3d [path]' and direct '3d [path]'
-  let customPath: string | undefined;
+  // Decide which mode to run in
+  const is3D = args[0] === '3d';
+  const isMap = args[0] === 'map';
   
-  if (args[0] === '3d') {
-    customPath = args[1];
+  // Extract path: if subcommand used, path is index 1, else index 0
+  let rawPath: string | undefined;
+  if (is3D || isMap) {
+    rawPath = args[1];
   } else {
-    customPath = args[0];
+    rawPath = args[0];
   }
 
-  // Default to current directory if no path provided
-  const rootDir = customPath ? path.resolve(process.cwd(), customPath) : process.cwd();
+  const rootDir = rawPath ? path.resolve(process.cwd(), rawPath) : process.cwd();
   
-  console.log(`🚀 Mapping codebase at: ${rootDir}`);
-  const graph = await parseCodebase(rootDir)
-  await start3DServer(rootDir, graph)
+  if (is3D) {
+    console.log(`🚀 Starting 3D Visualizer for: ${rootDir}`);
+    // For 3D, we need a fresh graph
+    const graph = await parseCodebase(rootDir)
+    await start3DServer(rootDir, graph)
+    return;
+  }
+
+  // Default / Indexing mode
+  console.log(`\x1b[36m🗺️  Codebase Mapper: Indexing ${rootDir}...\x1b[0m`);
+  const graph = await parseCodebase(rootDir, (current, total) => {
+    process.stdout.write(`\rProgress: ${Math.round((current / total) * 100)}% (${current}/${total} files)`);
+  });
+  console.log('\n\x1b[32m✅ Indexing complete. Generating AI summary...\x1b[0m');
+  
+  await generateAISummary(rootDir, graph);
+  
+  console.log(`\n\x1b[1m\x1b[35m✨ Codebase Map generated at .codebase-mapper/\x1b[0m`);
+  console.log('\x1b[34m👉 Tell your AI agent to read .codebase-mapper/README.md to understand this project.\x1b[0m');
+  console.log('\x1b[34m👉 To see the 3D map, run: 3d\x1b[0m');
 }
 
 main().catch(console.error)
