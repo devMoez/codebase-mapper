@@ -1,9 +1,11 @@
+// Purpose: Core logic for start3DServer
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'node:path';
 import chokidar from 'chokidar';
-import { parseCodebase, CodeGraph, getFullGraph, getTreeChildren, searchNodes } from './parser';
+import { parseCodebase, CodeGraph, getFullGraph, getTreeChildren, searchNodes, getTransitiveDependencies } from './parser';
+import { assembleContext } from './summarizer';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +27,15 @@ export async function start3DServer(rootDir: string, initialGraph: CodeGraph | n
 
   app.get('/api/graph', (req, res) => {
     res.json(currentGraph || { nodes: [], links: [] });
+  });
+
+  app.get('/api/context', async (req, res) => {
+    const query = req.query.query as string;
+    if (!query) {
+      return res.status(400).json({ error: 'Query parameter is required' });
+    }
+    const context = await assembleContext(currentRootDir, query);
+    res.json({ context });
   });
 
   app.post('/api/load-folder', async (req, res) => {
