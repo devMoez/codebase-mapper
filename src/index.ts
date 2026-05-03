@@ -10,9 +10,15 @@ import { generateAISummary, generateMarkdownMap, generateJsonMap, generateDotGra
 async function main() {
   const args = process.argv.slice(2)
   
-  // Decide which mode to run in
+  // 1. Determine if visualizer mode is requested
   const is3D = args.includes('3d');
-  const isMap = args.includes('map');
+  
+  // 2. Extract path argument
+  // Filter out the '3d' command and any flags
+  const pathArgs = args.filter(a => a !== '3d' && !a.startsWith('--') && a !== '-w');
+  const targetDir = pathArgs.length > 0 ? path.resolve(process.cwd(), pathArgs[0]) : process.cwd();
+
+  // 3. Keep other flags
   const isWatch = args.includes('--watch') || args.includes('-w');
   const isStubs = args.includes('--stubs');
   const isMarkdown = args.includes('--markdown');
@@ -21,62 +27,50 @@ async function main() {
   const contextIdx = args.indexOf('--context');
   
   // Load config
-  let configRoots: string[] = [];
   let configIgnore: string[] = [];
   if (fs.existsSync('cortex_config.json')) {
     try {
       const config = JSON.parse(fs.readFileSync('cortex_config.json', 'utf8'));
-      if (config.roots) configRoots = config.roots;
       if (config.ignore) configIgnore = config.ignore;
     } catch (e) {}
   }
 
-  // Extract paths: filter out flags, subcommands, and context query
-  const paths = args.filter((a, i) => {
-    if (a.startsWith('-') || a === '3d' || a === 'map') return false;
-    if (i > 0 && args[i-1] === '--context') return false;
-    return true;
-  });
-  
-  let rootDirs = paths.length > 0 ? paths.map(p => path.resolve(process.cwd(), p)) : (configRoots.length > 0 ? configRoots.map(p => path.resolve(process.cwd(), p)) : [process.cwd()]);
-  const primaryRoot = rootDirs[0];
-
   if (is3D) {
-    console.log(`🚀 Starting 3D Visualizer for: ${primaryRoot}`);
-    const graph = await parseCodebase(rootDirs, true)
-    await start3DServer(primaryRoot, graph)
+    console.log(`🚀 Starting 3D Visualizer for: ${targetDir}`);
+    const graph = await parseCodebase([targetDir], true)
+    await start3DServer(targetDir, graph)
     return;
   }
 
-  // Initial scan
-  console.log(`\x1b[36m🗺️  Codebase Mapper: Indexing ${rootDirs.join(', ')}...\x1b[0m`);
-  const graph = await parseCodebase(rootDirs, true, (current, total) => {
+  // Indexing mode
+  console.log(`\x1b[36m🗺️  Codebase Mapper: Indexing ${targetDir}...\x1b[0m`);
+  const graph = await parseCodebase([targetDir], true, (current, total) => {
     process.stdout.write(`\rProgress: ${Math.round((current / total) * 100)}% (${current}/${total} files)`);
   });
   console.log('\n\x1b[32m✅ Scan complete.\x1b[0m');
   
-  await generateAISummary(primaryRoot, graph);
-  if (isMarkdown) await generateMarkdownMap(primaryRoot, graph);
-  if (isJson) await generateJsonMap(primaryRoot, graph);
-  if (isDot) await generateDotGraph(primaryRoot, graph);
+  await generateAISummary(targetDir, graph);
+  if (isMarkdown) await generateMarkdownMap(targetDir, graph);
+  if (isJson) await generateJsonMap(targetDir, graph);
+  if (isDot) await generateDotGraph(targetDir, graph);
   
   saveSnapshot();
   
   if (isStubs) {
-    await generateStubs(primaryRoot);
+    await generateStubs(targetDir);
   }
 
   if (contextIdx !== -1 && args[contextIdx + 1]) {
     const query = args[contextIdx + 1];
-    const context = await assembleContext(primaryRoot, query);
+    const context = await assembleContext(targetDir, query);
     console.log('\n' + context);
   }
 
-  console.log(`\n\x1b[1m\x1b[35m✨ Codebase Map generated at .codemap/\x1b[0m`);
+  console.log(`\n\x1b[1m\x1b[35m✨ Codebase Map generated at ${path.join(targetDir, '.codemap/')}\x1b[0m`);
   
   if (isWatch) {
     console.log(`\x1b[33m👀 Watch mode active. Monitoring for changes...\x1b[0m`);
-    const watcher = chokidar.watch(rootDirs, {
+    const watcher = chokidar.watch(targetDir, {
         ignored: [/(^|[\/\\])\../, '**/node_modules/**', '**/.codemap/**', ...configIgnore],
         persistent: true,
         ignoreInitial: true
@@ -91,13 +85,13 @@ async function main() {
 
         const { path: filePath, action } = updateQueue.shift()!;
         try {
-            console.log(`\r\x1b[36m🔄 File ${action}: ${path.relative(primaryRoot, filePath)}\x1b[0m`);
-            await updateFile(primaryRoot, filePath);
+            console.log(`\r\x1b[36m🔄 File ${action}: ${path.relative(targetDir, filePath)}\x1b[0m`);
+            await updateFile(targetDir, filePath);
             const newGraph = getFullGraph();
-            await generateAISummary(primaryRoot, newGraph);
-            if (isMarkdown) await generateMarkdownMap(primaryRoot, newGraph);
-            if (isJson) await generateJsonMap(primaryRoot, newGraph);
-            if (isDot) await generateDotGraph(primaryRoot, newGraph);
+            await generateAISummary(targetDir, newGraph);
+            if (isMarkdown) await generateMarkdownMap(targetDir, newGraph);
+            if (isJson) await generateJsonMap(targetDir, newGraph);
+            if (isDot) await generateDotGraph(targetDir, newGraph);
         } catch (e) {
             console.error('\x1b[31mError during update:\x1b[0m', e);
         } finally {
@@ -117,14 +111,15 @@ async function main() {
     const shutdown = () => {
         console.log('\n🛑 Watcher stopped.');
         watcher.close();
-        import('./parser').then(m => m.closeDb());
+        closeDb();
         process.exit(0);
     };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    return; // Keep process alive
+    return;
   }
+}
 
   console.log('\x1b[34m👉 Tell your AI agent to read .codemap/README.md or .codemap/summary.json to understand this project.\x1b[0m');
   console.log('\x1b[34m👉 To see the 3D map, run: 3d 3d\x1b[0m');
