@@ -82,10 +82,14 @@ async function main() {
         ignoreInitial: true
     });
 
-    let isUpdating = false;
-    const triggerUpdate = async (filePath: string, action: string) => {
-        if (isUpdating) return;
-        isUpdating = true;
+    const updateQueue: { path: string, action: string }[] = [];
+    let isProcessing = false;
+
+    const processQueue = async () => {
+        if (isProcessing || updateQueue.length === 0) return;
+        isProcessing = true;
+
+        const { path: filePath, action } = updateQueue.shift()!;
         try {
             console.log(`\r\x1b[36m🔄 File ${action}: ${path.relative(primaryRoot, filePath)}\x1b[0m`);
             await updateFile(primaryRoot, filePath);
@@ -97,12 +101,18 @@ async function main() {
         } catch (e) {
             console.error('\x1b[31mError during update:\x1b[0m', e);
         } finally {
-            isUpdating = false;
+            isProcessing = false;
+            processQueue();
         }
     };
 
-    watcher.on('change', (p) => triggerUpdate(p, 'changed').catch(console.error));
-    watcher.on('add', (p) => triggerUpdate(p, 'added').catch(console.error));
+    const triggerUpdate = (filePath: string, action: string) => {
+        updateQueue.push({ path: filePath, action });
+        processQueue();
+    };
+
+    watcher.on('change', (p) => triggerUpdate(p, 'changed'));
+    watcher.on('add', (p) => triggerUpdate(p, 'added'));
 
     return; // Keep process alive
   }

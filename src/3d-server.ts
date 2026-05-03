@@ -1,8 +1,8 @@
-// Purpose: Core logic for start3DServer
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'node:path';
+import fs from 'node:fs';
 import chokidar from 'chokidar';
 import { parseCodebase, CodeGraph, getFullGraph, getTreeChildren, searchNodes, getTransitiveDependencies } from './parser';
 import { assembleContext } from './summarizer';
@@ -91,8 +91,12 @@ export async function start3DServer(rootDir: string, initialGraph: CodeGraph | n
         ignoreInitial: true
     });
     watcher.on('all', async () => {
-        currentGraph = await parseCodebase(currentRootDir);
+        broadcast({ type: 'graph-start' });
+        currentGraph = await parseCodebase(currentRootDir, true, (current, total) => {
+            broadcast({ type: 'graph-progress', current, total });
+        });
         broadcast({ type: 'update', graph: currentGraph });
+        broadcast({ type: 'graph-done' });
     });
   }
 
