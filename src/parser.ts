@@ -93,55 +93,71 @@ function extractSymbols(sourceFile: any, sourcePath: string, insertNode: any, in
 
     // Classes
     sourceFile.getClasses().forEach((c: any) => {
-        const name = c.getName() || 'AnonymousClass';
-        const symbolId = `${sourcePath}::${name}`;
-        runInsert(symbolId, name, 'symbol', null, sourcePath, { 
-          kind: 'class',
-          extends: c.getBaseClass()?.getName(),
-          implements: c.getImplements().map((i: any) => i.getText()),
-          isExported: c.isExported()
-        });
-        insertLink.run(sourcePath, symbolId, 'containment');
+        try {
+            const name = c.getName() || 'AnonymousClass';
+            const symbolId = `${sourcePath}::${name}`;
+            runInsert(symbolId, name, 'symbol', null, sourcePath, { 
+              kind: 'class',
+              extends: c.getBaseClass()?.getName(),
+              implements: c.getImplements().map((i: any) => i.getText()),
+              isExported: c.isExported()
+            });
+            insertLink.run(sourcePath, symbolId, 'containment');
+        } catch (e) {
+            console.error(`Error extracting class in ${sourcePath}:`, e);
+        }
     });
 
     // Interfaces
     sourceFile.getInterfaces().forEach((i: any) => {
-        const name = i.getName();
-        const symbolId = `${sourcePath}::${name}`;
-        runInsert(symbolId, name, 'symbol', null, sourcePath, { 
-          kind: 'interface',
-          extends: i.getExtends().map((e: any) => e.getText()),
-          isExported: i.isExported()
-        });
-        insertLink.run(sourcePath, symbolId, 'containment');
+        try {
+            const name = i.getName();
+            const symbolId = `${sourcePath}::${name}`;
+            runInsert(symbolId, name, 'symbol', null, sourcePath, { 
+              kind: 'interface',
+              extends: i.getExtends().map((e: any) => e.getText()),
+              isExported: i.isExported()
+            });
+            insertLink.run(sourcePath, symbolId, 'containment');
+        } catch (e) {
+            console.error(`Error extracting interface in ${sourcePath}:`, e);
+        }
     });
 
     // Functions
     sourceFile.getFunctions().forEach((f: any) => {
-        const name = f.getName() || 'AnonymousFunction';
-        const symbolId = `${sourcePath}::${name}`;
-        runInsert(symbolId, name, 'symbol', null, sourcePath, { 
-          kind: 'function',
-          params: f.getParameters().map((p: any) => ({ name: p.getName(), type: p.getType().getText() })),
-          returnType: f.getReturnType().getText(),
-          isExported: f.isExported()
-        });
-        insertLink.run(sourcePath, symbolId, 'containment');
+        try {
+            const name = f.getName() || 'AnonymousFunction';
+            const symbolId = `${sourcePath}::${name}`;
+            runInsert(symbolId, name, 'symbol', null, sourcePath, { 
+              kind: 'function',
+              params: f.getParameters().map((p: any) => ({ name: p.getName(), type: p.getType().getText() })),
+              returnType: f.getReturnType().getText(),
+              isExported: f.isExported()
+            });
+            insertLink.run(sourcePath, symbolId, 'containment');
+        } catch (e) {
+            console.error(`Error extracting function in ${sourcePath}:`, e);
+        }
     });
 
     // Variables
     sourceFile.getVariableStatements().forEach((v: any) => {
-        if (v.isExported()) {
-            v.getDeclarations().forEach((d: any) => {
-                const name = d.getName();
-                const symbolId = `${sourcePath}::${name}`;
-                runInsert(symbolId, name, 'symbol', null, sourcePath, { 
-                  kind: 'variable',
-                  type: d.getType().getText(),
-                  isExported: true
+        try {
+            if (v.isExported()) {
+                v.getDeclarations().forEach((d: any) => {
+                    const name = d.getName();
+                    const symbolId = `${sourcePath}::${name}`;
+                    runInsert(symbolId, name, 'symbol', null, sourcePath, { 
+                      kind: 'variable',
+                      type: d.getType().getText(),
+                      isExported: true
+                    });
+                    insertLink.run(sourcePath, symbolId, 'containment');
                 });
-                insertLink.run(sourcePath, symbolId, 'containment');
-            });
+            }
+        } catch (e) {
+            console.error(`Error extracting variable in ${sourcePath}:`, e);
         }
     });
 }
