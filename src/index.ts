@@ -114,6 +114,15 @@ async function main() {
     watcher.on('change', (p) => triggerUpdate(p, 'changed'));
     watcher.on('add', (p) => triggerUpdate(p, 'added'));
 
+    const shutdown = () => {
+        console.log('\n🛑 Watcher stopped.');
+        watcher.close();
+        import('./parser').then(m => m.closeDb());
+        process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
     return; // Keep process alive
   }
 

@@ -90,19 +90,53 @@ export async function start3DServer(rootDir: string, initialGraph: CodeGraph | n
         persistent: true,
         ignoreInitial: true
     });
+
+    const updateQueue: { dir: string }[] = [];
+    let isProcessing = false;
+
+    const processQueue = async () => {
+        if (isProcessing || updateQueue.length === 0) return;
+        isProcessing = true;
+
+        const { dir } = updateQueue.shift()!;
+        try {
+            broadcast({ type: 'graph-start' });
+            currentGraph = await parseCodebase(dir, true, (current, total) => {
+                broadcast({ type: 'graph-progress', current, total });
+            });
+            broadcast({ type: 'update', graph: currentGraph });
+            broadcast({ type: 'graph-done' });
+        } catch (err: any) {
+            console.error('Error during 3D server background update:', err);
+            broadcast({ type: 'graph-error', error: err.message });
+        } finally {
+            isProcessing = false;
+            processQueue();
+        }
+    };
+
     watcher.on('all', async () => {
-        broadcast({ type: 'graph-start' });
-        currentGraph = await parseCodebase(currentRootDir, true, (current, total) => {
-            broadcast({ type: 'graph-progress', current, total });
-        });
-        broadcast({ type: 'update', graph: currentGraph });
-        broadcast({ type: 'graph-done' });
+        updateQueue.push({ dir });
+        processQueue();
     });
   }
 
   if (currentRootDir && currentGraph) setupWatcher(currentRootDir);
 
-  server.listen(port, () => {
+  const serverInstance = server.listen(port, () => {
     console.log(`🚀 3D Visualizer: http://localhost:${port}`);
   });
+
+  // Graceful Shutdown
+  const shutdown = () => {
+    console.log('\n🛑 Shutting down 3D server...');
+    if (watcher) watcher.close();
+    serverInstance.close();
+    wss.close();
+    import('./parser').then(m => m.closeDb());
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }

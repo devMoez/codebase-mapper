@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { glob } from 'glob';
 import { Database } from 'bun:sqlite';
+import ignore from 'ignore';
 
 export interface GraphNode {
   id: string;
@@ -30,6 +31,13 @@ export interface CodeGraph {
 }
 
 let db: Database | null = null;
+
+export function closeDb() {
+    if (db) {
+        db.close();
+        db = null;
+    }
+}
 
 function initDb(rootDir: string) {
     const configDir = path.join(rootDir, '.codemap');
@@ -189,6 +197,8 @@ export async function updateFile(rootDir: string, filePath: string) {
 export function saveSnapshot() {
     const graph = getFullGraph();
     db!.prepare('INSERT INTO snapshots (data) VALUES (?)').run(JSON.stringify(graph));
+    // Retention policy: Keep only last 10 snapshots
+    db!.exec('DELETE FROM snapshots WHERE id NOT IN (SELECT id FROM snapshots ORDER BY timestamp DESC LIMIT 10);');
 }
 
 import ignore from 'ignore';
@@ -355,8 +365,8 @@ export function getTransitiveDependencies(nodeId: string): string[] {
     return Array.from(dependencies);
 }
 
-export function getUnusedFiles(): GraphNode[] {
-    const entryPoints = ['index.ts', 'index.js', 'main.ts', 'main.js', 'app.ts', 'app.js', 'server.ts', 'server.js'];
+export function getUnusedFiles(customEntryPoints?: string[]): GraphNode[] {
+    const entryPoints = customEntryPoints || ['index.ts', 'index.js', 'main.ts', 'main.js', 'app.ts', 'app.js', 'server.ts', 'server.js'];
     const placeholders = entryPoints.map(() => '?').join(',');
     return db!.prepare(`
         SELECT * FROM nodes 

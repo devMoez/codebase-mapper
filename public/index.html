@@ -64,6 +64,9 @@
                 statusEl.innerText = `Update received: ${msg.graph.nodes.length} nodes`;
             } else if (msg.type === 'graph-progress') {
                 statusEl.innerText = `Indexing: ${Math.round((msg.current / msg.total) * 100)}%`;
+            } else if (msg.type === 'graph-error') {
+                statusEl.innerText = `Error: ${msg.error}`;
+                statusEl.style.color = '#ff4d4d';
             }
         };
         ws.onclose = () => statusEl.innerText = 'Disconnected from server';
