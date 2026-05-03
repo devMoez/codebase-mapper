@@ -40,11 +40,18 @@ export async function start3DServer(rootDir: string, initialGraph: CodeGraph | n
 
   app.post('/api/load-folder', async (req, res) => {
     const { folderPath } = req.body;
+    if (!folderPath) return res.status(400).json({ error: 'folderPath is required' });
+
     try {
-        currentRootDir = folderPath;
+        const resolvedPath = path.resolve(folderPath).replace(/\\/g, '/');
+        if (!fs.existsSync(resolvedPath)) {
+            return res.status(404).json({ error: 'Path does not exist' });
+        }
+
+        currentRootDir = resolvedPath;
         res.json({ success: true });
         broadcast({ type: 'graph-start' });
-        currentGraph = await parseCodebase(currentRootDir, (current, total) => {
+        currentGraph = await parseCodebase(currentRootDir, true, (current, total) => {
             broadcast({ type: 'graph-progress', current, total });
         });
         setupWatcher(currentRootDir);

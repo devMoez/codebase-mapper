@@ -3,338 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Codebase 3D | Visualizer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Codebase Mapper 3D</title>
     <script src="https://unpkg.com/3d-force-graph"></script>
-    <script src="https://unpkg.com/three"></script>
     <style>
-        body { margin: 0; background: #020617; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
-        #3d-graph { width: 100vw; height: 100vh; }
-        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.5); }
-        .k-palette { display: none; }
-        .k-palette.active { display: flex; }
+        body { margin: 0; background-color: #000; overflow: hidden; font-family: sans-serif; }
+        #info { position: absolute; top: 10px; left: 10px; color: #00d4ff; z-index: 10; pointer-events: none; }
+        #controls { position: absolute; bottom: 10px; right: 10px; color: #fff; z-index: 10; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+        .node-label { background: rgba(0, 0, 0, 0.8); color: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #00d4ff; font-size: 12px; }
     </style>
 </head>
 <body>
+    <div id="info">
+        <h2 style="margin: 0;">🌌 Codebase Mapper 3D</h2>
+        <div id="status">Connecting to server...</div>
+    </div>
+    <div id="controls">
+        <b>Left Click:</b> Rotate | <b>Right Click:</b> Pan | <b>Scroll:</b> Zoom<br>
+        <b>Hover:</b> View Info | <b>Click Node:</b> Center
+    </div>
     <div id="3d-graph"></div>
 
-    <!-- UI Overlay -->
-    <div class="fixed top-6 left-6 z-10 flex flex-col gap-4">
-        <div class="glass p-4 rounded-xl shadow-2xl">
-            <h1 class="text-xl font-black bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">CODEBASE 3D</h1>
-            <p class="text-[10px] text-slate-400 font-mono tracking-widest uppercase mt-1">Force-Directed Dependency Graph</p>
-        </div>
-        
-        <div class="glass p-4 rounded-xl flex flex-col gap-2 text-xs">
-            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-cyan-400"></div> <span>File</span></div>
-            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-amber-400"></div> <span>Folder</span></div>
-            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-slate-500"></div> <span>Containment</span></div>
-            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-cyan-600"></div> <span>Import</span></div>
-        </div>
-    </div>
-
-    <!-- Command Palette -->
-    <div id="palette" class="k-palette fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm items-center justify-center p-6">
-        <div class="glass w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="p-4 border-b border-slate-700/50 flex items-center gap-3">
-                <span class="text-slate-400">🔍</span>
-                <input type="text" id="search-input" placeholder="Jump to file, folder or symbol... (⌘K)" class="bg-transparent border-none outline-none w-full text-lg">
-                <span class="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-500 font-bold uppercase">ESC</span>
-            </div>
-            <div id="search-results" class="max-h-[60vh] overflow-y-auto p-2">
-                <!-- Results injected here -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Bottom Controls -->
-    <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-4">
-        <div class="glass px-6 py-3 rounded-full flex items-center gap-6 shadow-xl">
-            <button onclick="toggleContainment()" id="btn-containment" class="text-xs font-bold hover:text-cyan-400 transition">📂 Structure</button>
-            <div class="w-px h-4 bg-slate-700"></div>
-            <button onclick="toggleImports()" id="btn-imports" class="text-xs font-bold hover:text-cyan-400 transition">🔗 Imports</button>
-            <div class="w-px h-4 bg-slate-700"></div>
-            <button onclick="resetGraph()" class="text-xs font-bold hover:text-rose-400 transition">🔄 Reset</button>
-        </div>
-    </div>
-
-    <!-- Selection Info -->
-    <div id="info-panel" class="fixed top-6 right-6 z-10 hidden glass w-72 rounded-xl p-4 shadow-2xl animate-in slide-in-from-right duration-300">
-        <div class="flex justify-between items-start mb-4">
-            <h2 id="node-name" class="font-bold text-lg truncate pr-4">File Name</h2>
-            <button onclick="closeInfo()" class="text-slate-500 hover:text-white">✕</button>
-        </div>
-        <div class="space-y-4 text-xs">
-            <div>
-                <p class="text-slate-500 uppercase font-bold tracking-wider mb-1">Path</p>
-                <code id="node-path" class="bg-slate-900 px-2 py-1 rounded block truncate">path/to/file</code>
-            </div>
-            <div id="impact-section">
-                <p class="text-slate-500 uppercase font-bold tracking-wider mb-1">Impact</p>
-                <button onclick="showImpact()" class="w-full bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 py-2 rounded font-bold hover:bg-cyan-600/40 transition">Trace Dependents</button>
-            </div>
-            <div id="pathfinding-section">
-                 <p class="text-slate-500 uppercase font-bold tracking-wider mb-1">Path Finding</p>
-                 <p class="text-[10px] text-slate-400 mb-2">Select another node to find shortest path</p>
-                 <button id="path-btn" onclick="startPathFinding()" class="w-full bg-slate-800 py-2 rounded font-bold hover:bg-slate-700 transition">Set as Source</button>
-            </div>
-        </div>
-    </div>
-
     <script>
-        let graphData = { nodes: [], links: [] };
-        let graph = null;
-        let showContainment = true;
-        let showImports = true;
-        let selectedNode = null;
-        let pathSourceNode = null;
-        let highlightedNodes = new Set();
-        let highlightedLinks = new Set();
-
-        const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
-            .backgroundColor('#020617')
-            .nodeLabel(node => `<div class="bg-slate-900 border border-slate-700 p-2 rounded text-xs font-bold">${node.name}</div>`)
-            .nodeColor(node => {
-                if (highlightedNodes.has(node.id)) return '#f43f5e'; // Rose
-                return node.type === 'folder' ? '#fbbf24' : '#22d3ee';
-            })
-            .nodeRelSize(5)
-            .linkWidth(link => highlightedLinks.has(link) ? 2 : 1)
-            .linkColor(link => {
-                if (highlightedLinks.has(link)) return '#f43f5e';
-                return link.type === 'containment' ? '#475569' : '#0891b2';
-            })
-            .linkDirectionalParticles(link => highlightedLinks.has(link) ? 4 : 0)
-            .linkDirectionalParticleWidth(2)
+        const statusEl = document.getElementById('status');
+        const graphEl = document.getElementById('3d-graph');
+        
+        const Graph = ForceGraph3D()(graphEl)
+            .nodeLabel(node => `<div class="node-label"><b>${node.name}</b><br>${node.type}</div>`)
+            .nodeAutoColorBy('type')
+            .nodeRelSize(6)
+            .linkDirectionalArrowLength(3.5)
+            .linkDirectionalArrowRelPos(1)
             .onNodeClick(node => {
-                selectNode(node);
-            })
-            .onBackgroundClick(() => {
-                closeInfo();
-                resetHighlights();
+                const distance = 40;
+                const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
+                Graph.cameraPosition(
+                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+                    node,
+                    3000
+                );
             });
 
-        // Load Initial Data
-        fetch('/api/graph')
-            .then(res => res.json())
-            .then(data => {
-                graphData = data;
-                updateGraph();
-            });
+        async function loadGraph() {
+            try {
+                const response = await fetch('/api/graph');
+                const data = await response.json();
+                Graph.graphData(data);
+                statusEl.innerText = `Connected: ${data.nodes.length} nodes, ${data.links.length} links`;
+            } catch (err) {
+                statusEl.innerText = 'Error loading graph data';
+                console.error(err);
+            }
+        }
 
-        // WebSocket for live updates
-        const socket = new WebSocket(`ws://${window.location.host}`);
-        socket.onmessage = (event) => {
+        const ws = new WebSocket(`ws://${location.host}`);
+        ws.onopen = () => statusEl.innerText = 'Connected: Live Updates Active';
+        ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             if (msg.type === 'update') {
-                console.log('Graph update received');
-                graphData = msg.graph;
-                updateGraph();
+                Graph.graphData(msg.graph);
+                statusEl.innerText = `Update received: ${msg.graph.nodes.length} nodes`;
+            } else if (msg.type === 'graph-progress') {
+                statusEl.innerText = `Indexing: ${Math.round((msg.current / msg.total) * 100)}%`;
             }
         };
+        ws.onclose = () => statusEl.innerText = 'Disconnected from server';
 
-        function updateGraph() {
-            const filteredLinks = graphData.links.filter(l => {
-                if (l.type === 'containment' && !showContainment) return false;
-                if (l.type === 'import' && !showImports) return false;
-                return true;
-            });
-            Graph.graphData({ nodes: graphData.nodes, links: filteredLinks });
-        }
-
-        function selectNode(node) {
-            selectedNode = node;
-            document.getElementById('info-panel').classList.remove('hidden');
-            document.getElementById('node-name').textContent = node.name;
-            document.getElementById('node-path').textContent = node.path;
-            
-            // Aim camera
-            const distance = 100;
-            const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
-            Graph.cameraPosition(
-                { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
-                node,
-                1000
-            );
-
-            if (pathSourceNode) {
-                document.getElementById('path-btn').textContent = 'Find Path to this node';
-            } else {
-                document.getElementById('path-btn').textContent = 'Set as Source';
-            }
-        }
-
-        function closeInfo() {
-            document.getElementById('info-panel').classList.add('hidden');
-            selectedNode = null;
-        }
-
-        function toggleContainment() {
-            showContainment = !showContainment;
-            document.getElementById('btn-containment').classList.toggle('text-cyan-400', showContainment);
-            updateGraph();
-        }
-
-        function toggleImports() {
-            showImports = !showImports;
-            document.getElementById('btn-imports').classList.toggle('text-cyan-400', showImports);
-            updateGraph();
-        }
-
-        function resetGraph() {
-            resetHighlights();
-            Graph.cameraPosition({ x: 0, y: 0, z: 1000 }, { x: 0, y: 0, z: 0 }, 1000);
-        }
-
-        function resetHighlights() {
-            highlightedNodes.clear();
-            highlightedLinks.clear();
-            pathSourceNode = null;
-            updateGraphColors();
-        }
-
-        function updateGraphColors() {
-            Graph.nodeColor(Graph.nodeColor()); // Force refresh
-            Graph.linkWidth(Graph.linkWidth());
-            Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
-        }
-
-        // Feature 2: Impact View (Transitive dependents)
-        function showImpact() {
-            if (!selectedNode) return;
-            resetHighlights();
-            
-            const dependents = new Set();
-            const visitedLinks = new Set();
-            
-            function trace(nodeId) {
-                dependents.add(nodeId);
-                graphData.links.forEach(link => {
-                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-                    
-                    if (targetId === nodeId && link.type === 'import') {
-                        highlightedLinks.add(link);
-                        if (!dependents.has(sourceId)) {
-                            trace(sourceId);
-                        }
-                    }
-                });
-            }
-            
-            trace(selectedNode.id);
-            highlightedNodes = dependents;
-            updateGraphColors();
-        }
-
-        // Feature 4: Path Finding
-        function startPathFinding() {
-            if (!selectedNode) return;
-            if (!pathSourceNode) {
-                pathSourceNode = selectedNode;
-                document.getElementById('path-btn').textContent = 'Set as Source';
-                alert(`Source set to: ${pathSourceNode.name}. Now select a target node.`);
-            } else {
-                findShortestPath(pathSourceNode.id, selectedNode.id);
-                pathSourceNode = null;
-            }
-        }
-
-        function findShortestPath(startId, endId) {
-            const queue = [[startId]];
-            const visited = new Set([startId]);
-            let path = null;
-
-            while (queue.length > 0) {
-                const currentPath = queue.shift();
-                const lastNodeId = currentPath[currentPath.length - 1];
-
-                if (lastNodeId === endId) {
-                    path = currentPath;
-                    break;
-                }
-
-                const neighbors = graphData.links
-                    .filter(l => (typeof l.source === 'object' ? l.source.id : l.source) === lastNodeId)
-                    .map(l => (typeof l.target === 'object' ? l.target.id : l.target));
-
-                for (const neighbor of neighbors) {
-                    if (!visited.has(neighbor)) {
-                        visited.add(neighbor);
-                        queue.push([...currentPath, neighbor]);
-                    }
-                }
-            }
-
-            if (path) {
-                resetHighlights();
-                highlightedNodes = new Set(path);
-                path.forEach((id, i) => {
-                    if (i < path.length - 1) {
-                        const link = graphData.links.find(l => {
-                            const s = typeof l.source === 'object' ? l.source.id : l.source;
-                            const t = typeof l.target === 'object' ? l.target.id : l.target;
-                            return s === id && t === path[i+1];
-                        });
-                        if (link) highlightedLinks.add(link);
-                    }
-                });
-                updateGraphColors();
-            } else {
-                alert('No path found between these nodes.');
-            }
-        }
-
-        // Feature 1: Command Palette
-        const palette = document.getElementById('palette');
-        const searchInput = document.getElementById('search-input');
-        const searchResults = document.getElementById('search-results');
-
-        window.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                palette.classList.add('active');
-                searchInput.focus();
-            }
-            if (e.key === 'Escape') {
-                palette.classList.remove('active');
-            }
-        });
-
-        searchInput.addEventListener('input', () => {
-            const query = searchInput.value.toLowerCase();
-            if (!query) {
-                searchResults.innerHTML = '';
-                return;
-            }
-
-            const matches = graphData.nodes
-                .filter(n => n.name.toLowerCase().includes(query) || n.path.toLowerCase().includes(query))
-                .slice(0, 10);
-
-            searchResults.innerHTML = matches.map(n => `
-                <div onclick="jumpToNode('${n.id}')" class="p-3 hover:bg-slate-800/50 cursor-pointer rounded-lg flex items-center justify-between group transition">
-                    <div class="flex items-center gap-3">
-                        <span class="text-xl">${n.type === 'folder' ? '📁' : '📄'}</span>
-                        <div>
-                            <div class="font-bold text-sm">${n.name}</div>
-                            <div class="text-[10px] text-slate-500">${n.path}</div>
-                        </div>
-                    </div>
-                    <span class="opacity-0 group-hover:opacity-100 text-cyan-400 text-xs font-bold uppercase tracking-widest">Jump →</span>
-                </div>
-            `).join('');
-        });
-
-        function jumpToNode(id) {
-            const node = graphData.nodes.find(n => n.id === id);
-            if (node) {
-                selectNode(node);
-                palette.classList.remove('active');
-                searchInput.value = '';
-                searchResults.innerHTML = '';
-            }
-        }
+        loadGraph();
     </script>
 </body>
 </html>

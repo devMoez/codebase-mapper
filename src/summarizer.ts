@@ -8,7 +8,7 @@ export async function generateMarkdownMap(rootDir: string, graph: CodeGraph) {
     let md = "# Codebase Map\n\n";
     
     for (const node of graph.nodes.filter(n => n.type === 'file')) {
-        md += `## ${node.path}\n`;
+        md += `## ${node.id}\n`;
         const symbols = graph.nodes.filter(s => s.type === 'symbol' && s.id.startsWith(`${node.id}::`));
         if (symbols.length > 0) {
             md += "### Symbols\n";
@@ -34,18 +34,19 @@ export async function generateMarkdownMap(rootDir: string, graph: CodeGraph) {
 
 export async function generateJsonMap(rootDir: string, graph: CodeGraph) {
     const mapperDir = path.join(rootDir, '.codemap');
+    const unused = getUnusedFiles();
     const jsonMap = graph.nodes.filter(n => n.type === 'file').map(node => {
         const symbols = graph.nodes.filter(s => s.type === 'symbol' && s.id.startsWith(`${node.id}::`)).map(s => s.name);
         const deps = graph.links.filter(l => l.source === node.id && l.type === 'import').map(l => l.target);
         const transitive = getTransitiveDependencies(node.id);
         
         return {
-            path: node.path,
+            path: node.id,
             purpose: node.meta.summary || "",
             symbols: symbols,
             dependencies: deps,
             transitive_dependencies: transitive,
-            is_unused: getUnusedFiles().some(u => u.id === node.id)
+            is_unused: unused.some(u => u.id === node.id)
         };
     });
     
@@ -86,7 +87,7 @@ export async function generateAISummary(rootDir: string, graph: CodeGraph) {
         });
 
         children.forEach((child, index) => {
-            if (child.type === 'symbol') return; // Don't show symbols in tree.txt
+            if (child.type === 'symbol') return;
             const isLast = index === children.length - 1;
             const prefix = isLast ? '└── ' : '├── ';
             result += `${indent}${prefix}${child.name}${child.type === 'folder' ? '/' : ''}\n`;
@@ -106,7 +107,9 @@ export async function generateAISummary(rootDir: string, graph: CodeGraph) {
         n.type === 'file' && entryPointPatterns.some(p => n.name.toLowerCase().includes(p))
     );
 
-    // 3. Generate summary.json (Machine Readable)
+    // 3. Generate summary.json
+    const hotspots = getHotspots(graph);
+    const unused = getUnusedFiles();
     const summaryJson = {
         project: path.basename(rootDir),
         stats: {
@@ -114,31 +117,20 @@ export async function generateAISummary(rootDir: string, graph: CodeGraph) {
             folders: graph.nodes.filter(n => n.type === 'folder').length,
             symbols: graph.nodes.filter(n => n.type === 'symbol').length,
         },
-        entryPoints: entryPoints.map(e => e.path),
+        entryPoints: entryPoints.map(e => e.id),
         structure: treeStr.split('\n').filter(line => line.trim() !== ''),
-        hotspots: getHotspots(graph),
+        hotspots: hotspots.map(h => h.path),
         nodes: graph.nodes.map(n => ({
             id: n.id,
             name: n.name,
             type: n.type,
-            path: n.path,
+            path: n.id,
             meta: n.meta
         }))
     };
     await fs.writeFile(path.join(mapperDir, 'summary.json'), JSON.stringify(summaryJson, null, 2));
 
-    // 5. Generate DOT Graph (Visual Graph)
-    let dot = 'digraph G {\n  rankdir=LR;\n  node [shape=box, style=filled, fillcolor=white];\n';
-    graph.links.filter(l => l.type === 'import').forEach(l => {
-        dot += `  "${l.source}" -> "${l.target}";\n`;
-    });
-    dot += '}';
-    await fs.writeFile(path.join(mapperDir, 'graph.dot'), dot);
-
-    // 6. Identify Dead Code
-    const unused = getUnusedFiles();
-
-    // 4. Generate README.md (AI Context)
+    // 4. Generate README.md
     const readmeContent = `# 🌌 Project Map: ${path.basename(rootDir)}
 
 > **AI INSTRUCTIONS:** Use this map to navigate instead of broad searches. 
@@ -151,15 +143,15 @@ ${treeStr}
 
 ## 📍 Logic Entry Points
 These are the primary entry points discovered in the project:
-${entryPoints.map(e => `- \`${e.path}\``).join('\n')}
+${entryPoints.map(e => `- \`${e.id}\``).join('\n')}
 
 ## 🚀 Architectural Hotspots
 Most imported files (Likely core logic or shared types):
-${getHotspots(graph).map(h => `- \`${h.path}\` (${h.count} imports)`).join('\n')}
+${hotspots.map(h => `- \`${h.path}\` (${h.count} imports)`).join('\n')}
 
 ## 💀 Dead Code (Potential)
 Files that are not imported by any other file:
-${unused.map(u => `- \`${u.path}\``).join('\n')}
+${unused.map(u => `- \`${u.id}\``).join('\n')}
 
 ## ⚙️ How to use
 - **Read:** \`.codemap/summary.json\` for the full knowledge graph.
@@ -200,8 +192,8 @@ export async function assembleContext(rootDir: string, query: string, tokenLimit
     context += `\n#### 📄 File Contents\n`;
     for (const p of Array.from(relevantPaths).slice(0, 5)) {
         try {
-            const relPath = p.includes('/') ? p.split('/').slice(1).join('/') : p;
-            const content = await fs.readFile(path.join(rootDir, relPath), 'utf8');
+            const absPath = path.resolve(rootDir, p).replace(/\\/g, '/');
+            const content = await fs.readFile(absPath, 'utf8');
             context += `\n--- FILE: ${p} ---\n\`\`\`typescript\n${content.slice(0, 2000)}\n\`\`\`\n`;
         } catch (e) {}
     }

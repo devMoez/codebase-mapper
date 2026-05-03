@@ -82,18 +82,27 @@ async function main() {
         ignoreInitial: true
     });
 
+    let isUpdating = false;
     const triggerUpdate = async (filePath: string, action: string) => {
-        console.log(`\r\x1b[36m🔄 File ${action}: ${path.relative(primaryRoot, filePath)}\x1b[0m`);
-        await updateFile(primaryRoot, filePath);
-        const newGraph = getFullGraph();
-        await generateAISummary(primaryRoot, newGraph);
-        if (isMarkdown) await generateMarkdownMap(primaryRoot, newGraph);
-        if (isJson) await generateJsonMap(primaryRoot, newGraph);
-        if (isDot) await generateDotGraph(primaryRoot, newGraph);
+        if (isUpdating) return;
+        isUpdating = true;
+        try {
+            console.log(`\r\x1b[36m🔄 File ${action}: ${path.relative(primaryRoot, filePath)}\x1b[0m`);
+            await updateFile(primaryRoot, filePath);
+            const newGraph = getFullGraph();
+            await generateAISummary(primaryRoot, newGraph);
+            if (isMarkdown) await generateMarkdownMap(primaryRoot, newGraph);
+            if (isJson) await generateJsonMap(primaryRoot, newGraph);
+            if (isDot) await generateDotGraph(primaryRoot, newGraph);
+        } catch (e) {
+            console.error('\x1b[31mError during update:\x1b[0m', e);
+        } finally {
+            isUpdating = false;
+        }
     };
 
-    watcher.on('change', (p) => triggerUpdate(p, 'changed'));
-    watcher.on('add', (p) => triggerUpdate(p, 'added'));
+    watcher.on('change', (p) => triggerUpdate(p, 'changed').catch(console.error));
+    watcher.on('add', (p) => triggerUpdate(p, 'added').catch(console.error));
 
     return; // Keep process alive
   }
