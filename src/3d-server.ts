@@ -22,7 +22,7 @@ export async function start3DServer(rootDir: string, initialGraph: CodeGraph | n
   let watcher: chokidar.FSWatcher | null = null;
   const port = 3000;
 
-  const publicPath = path.join(process.cwd(), 'public');
+  const publicPath = path.join("C:\\Users\\moezf\\Desktop\\codebase-mapper", 'public');
   app.use(express.static(publicPath));
 
   app.get('/api/graph', (req, res) => {

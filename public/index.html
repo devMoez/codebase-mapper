@@ -1,99 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Codebase Mapper 3D</title>
+    <title>Ultron CNS Dashboard</title>
     <script src="https://unpkg.com/3d-force-graph"></script>
+    <script src="https://unpkg.com/three"></script>
     <style>
-        body { margin: 0; background-color: #000; overflow: hidden; font-family: sans-serif; }
-        #info { position: absolute; top: 10px; left: 10px; color: #00d4ff; z-index: 10; pointer-events: none; }
-        #controls { position: absolute; bottom: 10px; right: 10px; color: #fff; z-index: 10; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
-        .node-label { background: rgba(0, 0, 0, 0.8); color: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #00d4ff; font-size: 12px; }
+        :root { 
+            --bg: #0a0a0f; 
+            --panel: #16161e; 
+            --text: #a9b1d6; 
+            --accent: #7aa2f7;
+            --folder: #ff9e64;
+            --file: #e0af68;
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #sidebar-left, #sidebar-right { position: absolute; top: 0; width: 280px; height: 100vh; background: var(--panel); padding: 20px; z-index: 10; border: 1px solid #292e42; }
+        #sidebar-left { left: 0; } 
+        #sidebar-right { right: 0; overflow-y: auto; }
+        h3 { color: var(--accent); border-bottom: 1px solid #292e42; padding-bottom: 10px; }
+        .item { padding: 4px 8px; font-size: 14px; transition: 0.2s; }
+        .item:hover { background: #292e42; color: #fff; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 10px; font-size: 14px; }
+        .swatch { width: 14px; height: 14px; margin-right: 10px; border-radius: 3px; }
     </style>
 </head>
 <body>
-    <div id="info">
-        <h2 style="margin: 0;">🌌 Codebase Mapper 3D</h2>
-        <div id="status">Connecting to server...</div>
+    <div id="sidebar-left">
+        <h3>Legend</h3>
+        <div class="legend-item"><div class="swatch" style="background:var(--file)"></div>File</div>
+        <div class="legend-item"><div class="swatch" style="background:var(--folder)"></div>Folder</div>
     </div>
-    <div id="controls">
-        <b>Left Click:</b> Rotate | <b>Right Click:</b> Pan | <b>Scroll:</b> Zoom<br>
-        <b>Hover:</b> View Info | <b>Click Node:</b> Center
-    </div>
+
+    <div id="sidebar-right"><h3>Project Tree</h3><div id="tree"></div></div>
     <div id="3d-graph"></div>
 
     <script>
-        const statusEl = document.getElementById('status');
-        const graphEl = document.getElementById('3d-graph');
-        
-        // Setup Three.js scene with stars
-        const Graph = ForceGraph3D()(graphEl)
-            .nodeLabel(node => `<div class="node-label"><b>${node.name}</b><br>${node.type}</div>`)
-            .nodeAutoColorBy('type')
-            .nodeRelSize(6)
-            .linkDirectionalArrowLength(3.5)
-            .linkDirectionalArrowRelPos(1)
+        const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+            .backgroundColor('#0a0a0f')
             .nodeThreeObject(node => {
-                const geometry = new THREE.SphereGeometry(node.type === 'folder' ? 5 : 3);
-                const material = new THREE.MeshStandardMaterial({ 
-                    color: node.type === 'folder' ? '#ff8c00' : '#ffd700',
-                    emissive: node.type === 'folder' ? '#cc5500' : '#aa8800',
-                    emissiveIntensity: 0.5
-                });
-                return new THREE.Mesh(geometry, material);
-            })
-            .onNodeClick(node => {
-                const distance = 40;
-                const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
-                Graph.cameraPosition(
-                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
-                    node,
-                    3000
+                const mesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(node.type === 'folder' ? 6 : 3),
+                    new THREE.MeshLambertMaterial({ 
+                        color: node.type === 'folder' ? '#ff9e64' : '#e0af68',
+                        transparent: true, opacity: 0.9 
+                    })
                 );
-            });
+                return mesh;
+            })
+            .linkMaterial(new THREE.MeshLambertMaterial({ color: '#565f89', transparent: true, opacity: 0.3 }))
+            .onNodeClick(n => { /* Node click interaction */ });
 
-        // Add space background
+        // Add 3D Starfield for depth
         const scene = Graph.scene();
-        const starGeometry = new THREE.BufferGeometry();
-        const starMaterial = new THREE.PointsMaterial({ color: 0xffffff });
-        const starVertices = [];
-        for (let i = 0; i < 5000; i++) {
-            const x = (Math.random() - 0.5) * 2000;
-            const y = (Math.random() - 0.5) * 2000;
-            const z = (Math.random() - 0.5) * 2000;
-            starVertices.push(x, y, z);
-        }
-        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-        const stars = new THREE.Points(starGeometry, starMaterial);
+        const stars = new THREE.Points(
+            new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(Array.from({length: 3000}, () => (Math.random()-0.5)*2000), 3)),
+            new THREE.PointsMaterial({ size: 1.5, color: 0xffffff })
+        );
         scene.add(stars);
 
-        // Add lighting
-        const ambientLight = new THREE.AmbientLight(0x404040, 2);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(1, 1, 1);
-        scene.add(ambientLight, directionalLight);
+        // Fetch & Build Tree
+        fetch('/api/file-tree').then(r=>r.json()).then(data => {
+            const container = document.getElementById('tree');
+            const render = (node) => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerHTML = (node.type==='directory'?'📁':'📄') + ' ' + node.name;
+                if(node.children) {
+                    node.children.forEach(c => div.appendChild(render(c)));
+                }
+                return div;
+            };
+            container.appendChild(render(data));
+        });
 
-        async function loadGraph() {
-            try {
-                const response = await fetch('/api/graph');
-                const data = await response.json();
-                Graph.graphData(data);
-                statusEl.innerText = `Connected: ${data.nodes.length} nodes`;
-            } catch (err) {
-                statusEl.innerText = 'Error loading graph data';
-            }
-        }
-
-        const ws = new WebSocket(`ws://${location.host}`);
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'update') Graph.graphData(msg.graph);
-            else if (msg.type === 'graph-progress') statusEl.innerText = `Indexing: ${Math.round((msg.current / msg.total) * 100)}%`;
-            else if (msg.type === 'graph-error') { statusEl.innerText = `Error: ${msg.error}`; statusEl.style.color = '#ff4d4d'; }
-        };
-
-        loadGraph();
+        fetch('/api/graph').then(r=>r.json()).then(data => Graph.graphData(data));
     </script>
 </body>
 </html>
